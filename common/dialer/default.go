@@ -174,6 +174,11 @@ func NewDefault(ctx context.Context, options option.DialerOptions) (*DefaultDial
 		dialer.Control = control.Append(dialer.Control, control.DisableUDPFragment())
 		listener.Control = control.Append(listener.Control, control.DisableUDPFragment())
 	}
+	// Apply TCP fingerprint control callback if enabled.
+	// Must be set before dialer4/dialer6 copies so it applies to both IPv4 and IPv6.
+	if options.TCPFingerprint != nil && options.TCPFingerprint.Enabled {
+		dialer.Control = control.Append(dialer.Control, tcpFingerprintControl(options.TCPFingerprint))
+	}
 	var (
 		dialer4    = dialer
 		udpDialer4 = dialer

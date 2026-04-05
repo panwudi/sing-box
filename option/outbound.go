@@ -87,9 +87,27 @@ type DialerOptions struct {
 	NetworkType          badoption.Listable[InterfaceType] `json:"network_type,omitempty"`
 	FallbackNetworkType  badoption.Listable[InterfaceType] `json:"fallback_network_type,omitempty"`
 	FallbackDelay        badoption.Duration                `json:"fallback_delay,omitempty"`
+	TCPFingerprint       *TCPFingerprint                   `json:"tcp_fingerprint,omitempty"`
 
 	// Deprecated: migrated to domain resolver
 	DomainStrategy DomainStrategy `json:"domain_strategy,omitempty"`
+}
+
+// TCPFingerprint defines TCP stack fingerprint parameters for disguising
+// the OS characteristics of outbound connections.
+// Applied via per-connection setsockopt, does not affect system-wide settings.
+type TCPFingerprint struct {
+	// Enabled controls whether TCP fingerprint spoofing is active.
+	Enabled bool `json:"enabled,omitempty"`
+	// TTL is the IP packet time-to-live. Windows defaults to 128, Linux/macOS/iOS default to 64.
+	// This is the most significant DPI detection feature and must match the client's actual platform.
+	TTL int `json:"ttl,omitempty"`
+	// MSS is the TCP Maximum Segment Size in bytes. Typical value is 1460 (Ethernet).
+	// Affects the MSS option in SYN packets (must be set before connect).
+	MSS int `json:"mss,omitempty"`
+	// WindowClamp is the TCP receive window upper limit in bytes. Different OSes have different defaults.
+	// macOS/iOS ~131072, Linux ~65535, Windows ~65535.
+	WindowClamp int `json:"window_clamp,omitempty"`
 }
 
 type _DomainResolveOptions struct {
