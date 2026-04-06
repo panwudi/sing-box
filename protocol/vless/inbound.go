@@ -2,8 +2,10 @@ package vless
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
+	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/inbound"
@@ -147,6 +149,29 @@ func (h *Inbound) Close() error {
 	)
 }
 
+// writeFakeHTTP401 writes a fake HTTP 401 Unauthorized response to the connection,
+// making the server appear as a normal nginx-backed API service to active probes.
+// This is used when VLESS protocol authentication fails (e.g. invalid UUID),
+// so that GFW active probes see a plausible API error instead of a TCP RST/FIN.
+func writeFakeHTTP401(conn net.Conn) {
+	body := `{"error":"unauthorized","message":"Invalid API key","status":401}`
+	resp := fmt.Sprintf(
+		"HTTP/1.1 401 Unauthorized\r\n"+
+			"Content-Type: application/json\r\n"+
+			"Content-Length: %d\r\n"+
+			"Connection: close\r\n"+
+			"Server: nginx\r\n"+
+			"Date: %s\r\n"+
+			"\r\n"+
+			"%s",
+		len(body),
+		time.Now().UTC().Format("Mon, 02 Jan 2006 15:04:05 GMT"),
+		body,
+	)
+	conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	conn.Write([]byte(resp))
+}
+
 func (h *Inbound) NewConnectionEx(ctx context.Context, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
 	if h.tlsConfig != nil && h.transport == nil {
 		tlsConn, err := tls.ServerHandshake(ctx, conn, h.tlsConfig)
@@ -159,6 +184,11 @@ func (h *Inbound) NewConnectionEx(ctx context.Context, conn net.Conn, metadata a
 	}
 	err := h.service.NewConnection(adapter.WithContext(ctx, &metadata), conn, metadata.Source, onClose)
 	if err != nil {
+		// When VLESS authentication fails (bad UUID, malformed protocol, etc.),
+		// write a fake HTTP 401 response before closing the connection.
+		// This makes the service look like a normal API server to active probes,
+		// rather than silently dropping the connection which is a telltale sign of a proxy.
+		writeFakeHTTP401(conn)
 		N.CloseOnHandshakeFailure(conn, onClose, err)
 		h.logger.ErrorContext(ctx, E.Cause(err, "process connection from ", metadata.Source))
 	}
